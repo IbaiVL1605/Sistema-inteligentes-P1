@@ -66,121 +66,70 @@
 initialize.problem <- function(file, random_actions = FALSE) {
   if (!file.exists(file)) stop(paste0("File not found: ", file))
   
-  all_lines <- readLines(file)
+  lines <- readLines(file, warn = FALSE)
+  # lines <- lines[nchar(trimws(lines)) > 0]
   
   problem <- list()
   problem$name <- paste0("LLM Orchestration - [", basename(file), "]")
   
-  # -----------------------------------------------
-  # Localizar las secciones por cabecera [SECTION]
-  # -----------------------------------------------
-  idx_params <- which(trimws(all_lines) == "[PARAMS]")
-  idx_map    <- which(trimws(all_lines) == "[MAP]")
-  idx_rag    <- which(trimws(all_lines) == "[RAG_LINKS]")
+  # ── Índices de sección ──────────────────────────────────────────────────
+  idx_params <- which(lines == "[PARAMS]")
+  idx_map    <- which(lines == "[MAP]")
+  idx_rag    <- which(lines == "[RAG_LINKS]")
   
-  # -----------------------------------------------
-  # 1. PARAMS
-  # Líneas entre [PARAMS] y [MAP], filtrando comentarios y vacías.
-  # En esta sección no hay celdas '#' así que el filtro es seguro.
-  # -----------------------------------------------
-  params_lines <- all_lines[(idx_params + 1):(idx_map - 1)]
-  params_lines <- params_lines[!grepl("^#", params_lines) & nchar(trimws(params_lines)) > 0]
+  # ── 1. PARAMS ────────────────────────────────────────────────────────────
+  params <- lines[(idx_params + 1):(idx_map - 1)]
   
-  parse_kv <- function(key, lines) {
-    match <- grep(paste0("^", key, "="), lines, value = TRUE)
-    if (length(match) == 0) return(NULL)
-    as.numeric(sub(paste0("^", key, "="), "", match[1]))
-  }
+  kv <- function(key) as.numeric(sub(paste0("^", key, "="), "", grep(paste0("^", key, "="), params, value = TRUE)[1]))
   
-  problem$gen_lat     <- parse_kv("GEN_LAT",     params_lines)
-  problem$switch_lat  <- parse_kv("SWITCH_LAT",  params_lines)
-  problem$eur_per_sec <- parse_kv("EUR_PER_SEC",  params_lines)
+  problem$gen_lat     <- kv("GEN_LAT")
+  problem$switch_lat  <- kv("SWITCH_LAT")
+  problem$eur_per_sec <- kv("EUR_PER_SEC")
   
-  # Providers: lista de listas con name, lat, cost
-  provider_lines <- grep("^PROVIDER=", params_lines, value = TRUE)
-  problem$providers <- lapply(provider_lines, function(p) {
-    parts <- unlist(strsplit(sub("^PROVIDER=", "", p), ";"))
-    kv <- setNames(
-      as.numeric(sub(".*=", "", parts[-1])),
-      sub("=.*", "", parts[-1])
-    )
-    list(name = parts[1], lat = kv["LAT"], cost = kv["COST"])
+  problem$providers <- lapply(grep("^PROVIDER=", params, value = TRUE), function(p) {
+    parts <- strsplit(sub("^PROVIDER=", "", p), ";")[[1]]
+    kv2   <- function(k) as.numeric(sub(paste0(k, "="), "", grep(paste0("^", k, "="), parts, value = TRUE)))
+    list(name = parts[1], lat = kv2("LAT"), cost = kv2("COST"))
   })
   
-  # -----------------------------------------------
-  # 2. MAP
-  # Líneas entre [MAP] y [RAG_LINKS], SIN filtrar comentarios:
-  # las filas de la cuadrícula pueden empezar por "# " (celda bloqueada)
-  # y no deben eliminarse. Solo se descartan líneas completamente vacías.
-  # -----------------------------------------------
-  map_lines <- all_lines[(idx_map + 1):(idx_rag - 1)]
-  map_lines <- map_lines[nchar(trimws(map_lines)) > 0]
+  # ── 2. MAP ───────────────────────────────────────────────────────────────
+  map <- lines[(idx_map + 1):(idx_rag - 1)]
   
-  problem$rows <- as.numeric(sub("^ROWS=", "", grep("^ROWS=", map_lines, value = TRUE)))
-  problem$cols <- as.numeric(sub("^COLS=", "", grep("^COLS=", map_lines, value = TRUE)))
+  problem$rows <- as.numeric(sub("^ROWS=", "", grep("^ROWS=", map, value = TRUE)))
+  problem$cols <- as.numeric(sub("^COLS=", "", grep("^COLS=", map, value = TRUE)))
   
-  # Líneas de cuadrícula: las que NO son clave=valor (ROWS=, COLS=)
-  grid_lines <- map_lines[!grepl("^[A-Z]+=", map_lines)]
-  problem$grid <- do.call(rbind, lapply(grid_lines, function(row) {
-    unlist(strsplit(trimws(row), "\\s+"))
-  }))
+  grid_lines   <- map[!grepl("^[A-Z]+=", map)]
+  problem$grid <- do.call(rbind, lapply(grid_lines, function(r) strsplit(trimws(r), "\\s+")[[1]]))
   
-  # Extraer posición Start (S) y Goal (G) desde la cuadrícula (1-based)
-  find_cell <- function(grid, symbol) {
-    pos <- which(grid == symbol, arr.ind = TRUE)
-    if (nrow(pos) == 0) stop(paste0("Símbolo '", symbol, "' no encontrado en el mapa"))
-    c(pos[1, 1], pos[1, 2])
-  }
+  find_rc <- function(sym) { p <- which(problem$grid == sym, arr.ind = TRUE); c(p[1,1], p[1,2]) }
+  problem$state_initial <- c(find_rc("S"), 0L)
+  problem$state_final   <- find_rc("G")
   
-  start_pos             <- find_cell(problem$grid, "S")
-  problem$state_initial <- c(start_pos[1], start_pos[2], 0L)
-  
-  goal_pos              <- find_cell(problem$grid, "G")
-  problem$state_final   <- c(goal_pos[1], goal_pos[2])
-  
-  # -----------------------------------------------
-  # 3. RAG_LINKS
-  # Líneas desde [RAG_LINKS] hasta el final, sin filtrar '#'
-  # (no hay celdas aquí, pero tampoco comentarios esperados).
-  # -----------------------------------------------
-  rag_raw <- all_lines[(idx_rag + 1):length(all_lines)]
-  rag_lines <- rag_raw[!grepl("^#", rag_raw) & nchar(trimws(rag_raw)) > 0]
+  # ── 3. RAG_LINKS ─────────────────────────────────────────────────────────
+  rag_lines <- lines[(idx_rag + 1):length(lines)]
   
   problem$rag_links <- list()
   
   for (l in rag_lines) {
-    parts    <- unlist(strsplit(l, ";"))
+    parts    <- strsplit(l, ";")[[1]]
     provider <- parts[1]
     
-    # Origen: X,Y (0-based) → c(row, col) (1-based)
-    from_xy  <- as.numeric(unlist(strsplit(parts[2], ",")))
-    from_rc  <- c(from_xy[2] + 1, from_xy[1] + 1)   # row = Y+1, col = X+1
+    xy2rc <- function(s) { xy <- as.numeric(strsplit(s, ",")[[1]]); c(xy[2] + 1, xy[1] + 1) }
+    from_rc <- xy2rc(parts[2])
+    to_rc   <- xy2rc(parts[3])
+    clave   <- paste(from_rc, collapse = ",")
     
-    # Destino: X,Y (0-based) → c(row, col) (1-based)
-    to_xy <- as.numeric(unlist(strsplit(parts[3], ",")))
-    to_rc <- c(to_xy[2] + 1, to_xy[1] + 1)
-    
-    # Clave de búsqueda: "row,col" del origen
-    clave <- paste(from_rc, collapse = ",")
-    
-    if (is.null(problem$rag_links[[provider]])) {
-      problem$rag_links[[provider]] <- list()
-    }
+    if (is.null(problem$rag_links[[provider]])) problem$rag_links[[provider]] <- list()
     problem$rag_links[[provider]][[clave]] <- to_rc
   }
   
-  # -----------------------------------------------
-  # 4. Acciones posibles
-  # -----------------------------------------------
+  # ── 4. Acciones ───────────────────────────────────────────────────────────
   problem$actions_possible <- c(
     "UP", "DOWN", "LEFT", "RIGHT",
     "UP_RIGHT", "DOWN_RIGHT", "DOWN_LEFT", "UP_LEFT",
     "JUMP_ECO", "JUMP_PRO"
   )
-  
-  if (random_actions) {
-    problem$actions_possible <- sample(problem$actions_possible)
-  }
+  if (random_actions) problem$actions_possible <- sample(problem$actions_possible)
   
   return(problem)
 }

@@ -276,14 +276,13 @@ solve.instance <- function(file = NULL,
 # 6. Ejecutar instancias
 # =========================================================================
 files <- c(
-  "../data/llm-orchestration/01-loop-trap.txt"
-  #"../data/llm-orchestration/02-rag-dilema.txt"
+  #"../data/llm-orchestration/01-loop-trap.txt"
+  "../data/llm-orchestration/02-rag-dilema.txt"
   #"../data/llm-orchestration/03-deep-corridor.txt",
-  #"../data/llm-orchestration/04-cost-trap.txt",
+  #"../data/llm-orchestration/04-cost-trap.txt"
   #"../data/llm-orchestration/05-greedy-trap.txt",
   #"../data/llm-orchestration/06-shallow-illusion.txt",
-  # Añade más instancias aquí:
-  # "../data/llm-orchestration/02-otra-instancia.txt"
+  
 )
 
 for (f in files) {
