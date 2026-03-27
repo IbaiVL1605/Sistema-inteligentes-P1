@@ -112,7 +112,7 @@ export.to.csv <- function(df, csv_file = NULL, csv_dir = ".", default_prefix = "
   }
   
   # Write CSV (without row names)
-  utils::write.csv(df, out_path, row.names = FALSE)
+  utils::write.table(df, out_path, sep = ";", row.names = FALSE, quote = TRUE, fileEncoding = "UTF-8")
   
   return(out_path)
 }
@@ -189,9 +189,7 @@ analyze.results <- function(results,
         solution_length <- 0
       }
       
-      # result$node_final$cost es el coste UNIFICADO en ms equivalentes
-      # (euros convertidos) que usa A* internamente — NO es el coste real en €.
-      # Se llama a decompose.solution() para obtener las métricas reales.
+      # Cost
       if (!is.null(result$node_final$cost) && length(result$node_final$cost) > 0) {
         solution_cost <- result$node_final$cost
       }
@@ -216,21 +214,12 @@ analyze.results <- function(results,
       if (verbose) print(" * No Solution Found :(", quote = FALSE)
     }
     
-    # 6. Calcular latencia real (ms) y coste real (euros) mediante decompose.solution().
-    # solution_cost era el coste unificado en ms equivalentes usado internamente
-    # por A* — NO es el coste real en euros. decompose.solution() recorre las
-    # acciones y suma: latencia real por paso y euros solo cuando se abre ticket RAG.
-    descomp     <- decompose.solution(result, problem)
-    latencia_ms <- descomp$latencia_ms
-    coste_eur   <- descomp$coste_eur
-    
-    # 7. Build Single Row Data Frame
+    # 6. Build Single Row Data Frame
     return(data.frame(Name           = result$name,
                       Solution_Found = solution_found,
                       End_Reason     = end_reason,
                       Actions        = ifelse(length(solution_length) > 0, solution_length, NA),
-                      Latencia_ms    = ifelse(length(latencia_ms) > 0 && !is.na(latencia_ms), round(latencia_ms, 1), NA),
-                      Coste_eur      = ifelse(length(coste_eur)   > 0 && !is.na(coste_eur),   round(coste_eur,   4), NA),
+                      Cost           = ifelse(length(solution_cost) > 0, solution_cost, NA),
                       Expanded       = ifelse(length(expanded) > 0, expanded, NA),
                       Max_Depth      = ifelse(length(max_depth) > 0, max_depth, NA),
                       Max_Frontier   = ifelse(length(max_frontier) > 0, max_frontier, NA),
@@ -338,7 +327,7 @@ local.analyze.results <- function(results,
                         csv_file)
     
     full_path <- file.path(csv_dir, file_name)
-    write.csv(analyzed_results, full_path, row.names = FALSE)
+    utils::write.table(analyzed_results, full_path, sep = ";", row.names = FALSE, quote = TRUE, fileEncoding = "UTF-8")
     
     if (verbose) cat(paste0("CSV exported to: ", full_path, "\n"))
   }
