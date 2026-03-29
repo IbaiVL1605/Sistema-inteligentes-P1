@@ -246,47 +246,60 @@ solve.instance <- function(file = NULL,
     "A* (Tree)", "A* (Graph)"
   )
   
-  # --- Tabla estándar de analyze.results (coste unificado) ---
+  # --- Tabla estándar de analyze.results (sin exportar CSV aún) ---
   results_df <- analyze.results(
-    results  = results_list,
-    problem  = problem,
-    verbose  = verbose,
-    export_csv = export_csv,
-    csv_dir  = csv_dir
+    results    = results_list,
+    problem    = problem,
+    verbose    = verbose,
+    export_csv = FALSE,   # lo exportamos nosotros después con las columnas reales
+    csv_dir    = csv_dir
   )
+  
+  # --- Sustituir columna Cost unificada por Latencia_ms y Coste_eur reales ---
+  decomps <- lapply(results_list, function(res) decompose.solution(res, problem))
+  
+  results_df$Cost        <- NULL
+  results_df$Latencia_ms <- sapply(decomps, function(d) d$latencia_ms)
+  results_df$Coste_eur   <- sapply(decomps, function(d) d$coste_eur)
+  
+  # --- Exportar CSV con las columnas reales ---
+  if (export_csv) {
+    if (!dir.exists(csv_dir)) dir.create(csv_dir, recursive = TRUE)
+    csv_file <- paste0(
+      gsub("[^[:alnum:]_]", "_", problem$name), "_",
+      format(Sys.time(), "%Y-%b-%d_%H-%M-%S"), ".csv"
+    )
+    out_path <- file.path(csv_dir, csv_file)
+    utils::write.table(results_df, out_path, sep = ";",
+                       row.names = FALSE, quote = TRUE, fileEncoding = "UTF-8")
+    cat(paste0("CSV exportado a: ", out_path, "\n"))
+  }
   
   # --- Tabla con latencia real y coste en € desglosados ---
   cat("\n>>> Desglose real de latencia y coste económico por algoritmo:\n")
   print.solution.table(results_list, labels, problem)
   
-  # --- Tabla bonita en RStudio Viewer si está disponible ---
-  if (requireNamespace("kableExtra", quietly = TRUE) &&
-      requireNamespace("knitr", quietly = TRUE)) {
-    print(kableExtra::kable_material(
-      kableExtra::kbl(results_df, caption = paste("Resultados:", problem$name)),
-      c("striped", "hover", "condensed")
-    ))
-  }
+  View(results_df)
   
   return(invisible(list(results = results_df, results_list = results_list)))
 }
-
-
 # =========================================================================
 # 6. Ejecutar instancias
 # =========================================================================
 files <- c(
-  #"../data/llm-orchestration/01-loop-trap.txt"
-  "../data/llm-orchestration/02-rag-dilema.txt"
-  #"../data/llm-orchestration/03-deep-corridor.txt",
-  #"../data/llm-orchestration/04-cost-trap.txt"
-  #"../data/llm-orchestration/05-greedy-trap.txt",
-  #"../data/llm-orchestration/06-shallow-illusion.txt",
+  "../data/llm-orchestration/01-loop-trap.txt",
+  "../data/llm-orchestration/02-rag-dilema.txt",
+  "../data/llm-orchestration/03-deep-corridor.txt",
+  "../data/llm-orchestration/04-cost-trap.txt",
+  "../data/llm-orchestration/05-greedy-trap.txt",
+  "../data/llm-orchestration/06-shallow-illusion.txt"
   
 )
 
 for (f in files) {
-  solve.instance(file = f)
+  resultado <- solve.instance(file = f)
+  
+ 
+  
 }
 
-#
