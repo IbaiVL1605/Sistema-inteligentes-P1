@@ -1,63 +1,6 @@
 # =========================================================================
 # PROBLEM FORMULATION: LLM INFERENCE ORCHESTRATION
 # =========================================================================
-#
-# ESTADO AMPLIADO — vector de longitud 3: c(row, col, modo)
-#
-#   row  : fila actual en la cuadrícula (1-based)
-#   col  : columna actual en la cuadrícula (1-based)
-#   modo : entero que indica el modo de operación actual
-#            0 = GEN        (generación interna, paso a celda contigua)
-#            1 = VectorDB_PRO  (ticket RAG abierto con proveedor PRO)
-#            2 = VectorDB_ECO  (ticket RAG abierto con proveedor ECO)
-#
-# Por qué incluir el modo en el estado:
-#   El coste de cada acción depende del modo ANTERIOR (si cambia de modo
-#   se aplica SWITCH_LAT y se paga el ticket del nuevo proveedor RAG).
-#   Sin el modo en el estado, get.cost() no puede calcularse correctamente,
-#   y Graph-Search trataría como iguales dos nodos en la misma celda pero
-#   con distintos modos, lo que impediría encontrar el camino óptimo.
-#
-# Acciones posibles:
-#   GEN  : UP, DOWN, LEFT, RIGHT, UP_RIGHT, DOWN_RIGHT, DOWN_LEFT, UP_LEFT
-#   RAG  : JUMP_ECO, JUMP_PRO
-#
-# Modelo de transición:
-#   GEN  → mueve una celda en la dirección indicada, actualiza modo a 0
-#   RAG  → salta al destino definido en rag_links, actualiza modo a 1 o 2
-#
-# Restricciones:
-#   1. Límites del mapa: no se puede salir de la cuadrícula
-#   2. Obstáculos (#): no se puede entrar en una celda bloqueada
-#   3. RAG Links: el salto solo es aplicable si existe el enlace desde
-#      la posición actual para ese proveedor
-#
-# Test de estado final:
-#   Las coordenadas (row, col) coinciden con state_final
-#   (el modo no importa para el test de meta)
-#
-# Función de coste — unidad: milisegundos equivalentes
-#   Se unifica tiempo y dinero mediante: ms_equiv = euros × (1000 / EUR_PER_SEC)
-#   Esto permite que A* minimice simultáneamente latencia y coste económico.
-#
-# Heurística (problema relajado):
-#   Distancia de Chebyshev × GEN_LAT
-#   Chebyshev en lugar de Manhattan porque los movimientos diagonales están
-#   permitidos. Se ignoran obstáculos, penalizaciones de cambio y costes
-#   de ticket → la heurística nunca sobreestima → admisible.
-#
-# to.string():
-#   Codifica "row,col,modo" — el modo es necesario para que Graph-Search
-#   distinga correctamente entre estados con igual posición pero modo distinto.
-#
-# Authors / Maintainers:
-#   - Roberto Carballedo
-#   - Fernando Boto
-#   - Enrique Onieva
-#
-# Last updated: March 2026
-# Educational use only — University of Deusto
-# =========================================================================
 
 
 # =========================================================================
@@ -67,7 +10,7 @@ initialize.problem <- function(file, random_actions = FALSE) {
   if (!file.exists(file)) stop(paste0("File not found: ", file))
   
   lines <- readLines(file, warn = FALSE)
-  # lines <- lines[nchar(trimws(lines)) > 0]
+  lines <- lines[nchar(trimws(lines)) > 0]
   
   problem <- list()
   problem$name <- paste0("LLM Orchestration - [", basename(file), "]")
@@ -114,7 +57,7 @@ initialize.problem <- function(file, random_actions = FALSE) {
     parts    <- strsplit(l, ";")[[1]]
     provider <- parts[1]
     
-    xy2rc <- function(s) { xy <- as.numeric(strsplit(s, ",")[[1]]); c(xy[2] + 1, xy[1] + 1) }
+    xy2rc <- function(s) { xy <- as.numeric(strsplit(s, ",")[[1]]); c(xy[2], xy[1]) }
     from_rc <- xy2rc(parts[2])
     to_rc   <- xy2rc(parts[3])
     clave   <- paste(from_rc, collapse = ",")
@@ -396,16 +339,7 @@ get.evaluation <- function(state, problem) {
 }
 
 
-# =========================================================================
-# load.problem(filename)   — helper de conveniencia
-# =========================================================================
-load.problem <- function(filename) {
-  file_path <- paste0(
-    "C:/Users/ibai.velada/ProyectoR/SInt_E1/search-template-2026/data/llm-orchestration/",
-    filename
-  )
-  return(initialize.problem(file_path))
-}
+
 
 # Prueba rápida:
 # p <- load.problem("01-loop-trap.txt")
